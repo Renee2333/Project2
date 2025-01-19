@@ -1,0 +1,2198 @@
+---
+title: "project2"
+output: html_document
+date: "2024-11-24"
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+# read
+```{r}
+enhancer_hepg2 <- read.csv("C:/Users/ruini/Desktop/project2/r/motif_info_thresh_500_enhancers_hepg2.csv", header = TRUE, sep = ",")
+promoter_hepg2 <- read.csv("C:/Users/ruini/Desktop/project2/r/motif_info_thresh_500_promoters_hepg2.csv", header = TRUE, sep = ",")
+prediction_enhancer <-read.csv("C:/Users/ruini/Desktop/project2/r/predictions_enhancers_hepg2.csv",header = TRUE)
+prediction_promoter <-read.csv("C:/Users/ruini/Desktop/project2/r/predictions_promoters_hepg2.csv",header = TRUE)
+prediction_random <-read.csv("C:/Users/ruini/Desktop/project2/r/prediction_results.csv",header = TRUE)
+gradxinp_random <- read.csv("C:/Users/ruini/Desktop/project2/r/continuous_random_1000x20_data.csv", header = TRUE, sep = ",")
+```
+
+## random prediction
+```{r}
+library(stringr)
+library(ggplot2)
+library(dplyr)
+library(tidyr)
+prediction_random <- prediction_random[1]
+prediction_random
+
+result_df <- data.frame(matrix(nrow = nrow(gradxinp_random), ncol = ncol(gradxinp_random)))
+colnames(result_df) <- colnames(gradxinp_random)
+
+for (i in 1:ncol(gradxinp_random)) {
+  result_df[[i]] <- apply(gradxinp_random[i], 1, function(cell) {
+    values <- as.numeric(unlist(strsplit(cell, split = ":")))
+    return(max(values))
+  })
+}
+random_result <- cbind(result_df[-1,], prediction_random)
+
+result_df2 <- data.frame(matrix(nrow = nrow(gradxinp_random), ncol = ncol(gradxinp_random)))
+colnames(result_df2) <- colnames(gradxinp_random)
+
+for (i in 1:ncol(gradxinp_random)) {
+  result_df2[[i]] <- apply(gradxinp_random[i], 1, function(cell) {
+    values <- as.numeric(unlist(strsplit(cell, split = ":")))
+    return(min(values))
+  })
+}
+random_result <- cbind(random_result,result_df2[-1,])
+
+result_df3 <- data.frame(matrix(nrow = nrow(gradxinp_random), ncol = ncol(gradxinp_random)))
+colnames(result_df3) <- colnames(gradxinp_random)
+
+for (i in 1:ncol(gradxinp_random)) {
+  result_df3[[i]] <- apply(gradxinp_random[i], 1, function(cell) {
+    abs_values <- abs(as.numeric(unlist(strsplit(cell, split = ":"))))
+    
+    return(max(abs_values)- min(abs_values))
+  })
+}
+random_result <- cbind(random_result, result_df3[-1,])
+random_result
+
+group_cols <- random_result[, 1:20]
+group_col2 <- random_result[, 22:41]
+group_col3 <- random_result[, 42:61]
+X0_col <- random_result$X0          
+
+random_data <- data.frame(
+  gradxinp_0_max_orginal = as.vector(as.matrix(group_cols)),  # 将 group1-group20 转为向量
+  gradxinp_0_min_orginal = as.vector(as.matrix(group_col2)),
+  gradxinp_difference = as.vector(as.matrix(group_col3)),
+  prediction = rep(X0_col, each = 20)                     # 每个 X0 重复20次，匹配每个 group_value
+)
+
+high_prediction_data <- subset(random_data, prediction > 0.7)
+low_prediction_data <- subset(random_data, prediction < 0.1)
+high_prediction_data
+
+```
+## violin for gradxinp difference
+```{r}
+# Function to create a violin plot for gradxinp_difference based on prediction groups
+creat_gradxinp_diff <- function(high_prediction_data, low_prediction_data){
+  # Add group labels
+  high_prediction_data$group <- "High Prediction"
+  low_prediction_data$group <- "Low Prediction"
+
+  # Combine datasets
+  combined_data <- rbind(high_prediction_data, low_prediction_data)
+
+  # Create the violin plot
+  plot <- ggplot(combined_data, aes(x = group, y = gradxinp_difference)) +
+    geom_violin(trim = FALSE, alpha = 0.7) +
+    labs(
+      title = "Violin Plot of gradxinp difference for High and Low Prediction Groups",
+      x = "Group",
+      y = "gradxinp_difference"
+    ) +
+    theme_minimal()
+  
+  return(list(data = combined_data, plot = plot))
+}
+
+result <- creat_gradxinp_diff(high_prediction_data, low_prediction_data)
+plot <- result$plot
+
+ggsave(
+  filename = "random_violin2.png",
+  plot = plot,
+  width = 8,
+  height = 6,
+  dpi = 300,
+  bg = "white"  
+)
+```
+
+## violin plot for max and min gradxinp
+```{r}
+# Function to create a violin plot for max and min gradxinp based on prediction groups
+create_violin_plot <- function(high_prediction_data, low_prediction_data) {
+  
+  high_max <- data.frame(
+    gradxinp_value = high_prediction_data$gradxinp_0_max_orginal,
+    group = "High Prediction",
+    type = "Max"
+  )
+  
+  high_min <- data.frame(
+    gradxinp_value = high_prediction_data$gradxinp_0_min_orginal,
+    group = "High Prediction",
+    type = "Min"
+  )
+  
+  low_max <- data.frame(
+    gradxinp_value = low_prediction_data$gradxinp_0_max_orginal,
+    group = "Low Prediction",
+    type = "Max"
+  )
+  
+  low_min <- data.frame(
+    gradxinp_value = low_prediction_data$gradxinp_0_min_orginal,
+    group = "Low Prediction",
+    type = "Min"
+  )
+  
+  combined_data <- rbind(high_max, high_min, low_max, low_min)
+  
+  plot <- ggplot(combined_data, aes(x = interaction(group, type), y = gradxinp_value, fill = type)) +
+    geom_violin(alpha = 0.7, trim = FALSE) +
+    geom_boxplot(width = 0.1, outlier.shape = NA, alpha = 0.5) +
+    labs(
+      title = "Violin Plot of Max and Min gradxinp for High and Low Prediction Groups",
+      x = "Prediction Group and Type",
+      y = "gradxinp Value"
+    ) +
+    theme_minimal() +
+    theme(
+      axis.text.x = element_text(angle = 45, hjust = 1),
+      legend.title = element_blank()
+    )
+  
+  return(list(data = combined_data, plot = plot))
+}
+
+# Generate the plot
+result <- create_violin_plot(high_prediction_data, low_prediction_data)
+plot <- result$plot
+data2 <- result$data
+data2
+ggsave(
+  filename = "random_violin.png",
+  plot = plot,
+  width = 8,
+  height = 6,
+  dpi = 300,
+  bg = "white"  
+)
+
+```
+## plot max vs min gradxinp
+```{r}
+plot_max_vs_min_with_predictions <- function(data) {
+  data$prediction_group <- ifelse(data$prediction > 0.7, "High Prediction",
+                                  ifelse(data$prediction < 0.1, "Low Prediction", "Other"))
+  
+  
+  plot <- ggplot(data, aes(x = gradxinp_0_max_orginal, y = gradxinp_0_min_orginal, color = prediction_group)) +
+    geom_point(alpha = 0.7, size = 1.5) +
+    scale_color_manual(
+      values = c("High Prediction" = "red", 
+                 "Low Prediction" = "blue", 
+                 "Other" = "grey")
+    ) +
+    labs(
+      title = "Scatter Plot of Max vs. Min gradxinp with Prediction Groups",
+      x = "Max gradxinp",
+      y = "Min gradxinp",
+      color = "Prediction Group"
+    ) +
+    theme_minimal()
+  
+  return(plot)
+}
+
+plot <- plot_max_vs_min_with_predictions(random_data)
+  
+ggsave(
+    filename = "max_min_random.png",
+    plot = plot,
+    width = 8,
+    height = 6,
+    dpi = 300,
+    bg = "white"
+  )
+```
+## seperate plots
+```{r}
+plot_max_vs_min_separate <- function(all_data, high_prediction_data, low_prediction_data) {
+  
+  create_scatter_plot <- function(data, title) {
+    # Calculate Pearson correlation
+    correlation <- cor(data$gradxinp_0_max, data$gradxinp_0_min, use = "complete.obs")
+    
+    ggplot(data, aes(x = gradxinp_0_max, y = gradxinp_0_min)) +
+      geom_point(alpha = 0.5, color = "blue", size = 1) +
+      labs(
+        title = title,
+        x = "Max gradxinp",
+        y = "Min gradxinp"
+      ) +
+      theme_minimal() +
+      annotate(
+        "text",
+        x = Inf, y = -Inf,  # Position in the bottom right corner
+        label = paste0("r = ", round(correlation, 2)),
+        hjust = 1.2, vjust = -1,  # Adjust positioning
+        size = 4, color = "black"
+      )
+  }
+  
+  # Step 1: All data
+  plot_all <- create_scatter_plot(
+    data = data.frame(
+      gradxinp_0_max = all_data$gradxinp_0_max_orginal,
+      gradxinp_0_min = all_data$gradxinp_0_min_orginal
+    ),
+    title = "Scatter Plot of Max vs. Min gradxinp (All Data)"
+  )
+  
+  # Step 2: High prediction
+  plot_high <- create_scatter_plot(
+    data = data.frame(
+      gradxinp_0_max = high_prediction_data$gradxinp_0_max_orginal,
+      gradxinp_0_min = high_prediction_data$gradxinp_0_min_orginal
+    ),
+    title = "Scatter Plot of Max vs. Min gradxinp (High Prediction)"
+  )
+  
+  # Step 3: Low prediction
+  plot_low <- create_scatter_plot(
+    data = data.frame(
+      gradxinp_0_max = low_prediction_data$gradxinp_0_max_orginal,
+      gradxinp_0_min = low_prediction_data$gradxinp_0_min_orginal
+    ),
+    title = "Scatter Plot of Max vs. Min gradxinp (Low Prediction)"
+  )
+  
+  return(list(all_plot = plot_all, high_plot = plot_high, low_plot = plot_low))
+}
+
+ans <- plot_max_vs_min_separate(random_data, high_prediction_data, low_prediction_data)
+ggsave(
+    filename = "scatter_max_vs_min_all.png",
+    plot = ans$all_plot,
+    width = 8,
+    height = 6,
+    dpi = 300,
+    bg = "white"
+  )
+  
+ggsave(
+    filename = "scatter_max_vs_min_high.png",
+    plot = ans$high_plot,
+    width = 8,
+    height = 6,
+    dpi = 300,
+    bg = "white"
+  )
+  
+ggsave(
+    filename = "scatter_max_vs_min_low.png",
+    plot = ans$low_plot,
+    width = 8,
+    height = 6,
+    dpi = 300,
+    bg = "white"
+  )
+
+```
+
+
+##enhancer
+## data preparation
+```{r}
+# use abs(max) in the gradxinp for motif
+enhancer_hepg2$gradxinp_0_max <- sapply(
+  strsplit(enhancer_hepg2$gradxinp_0, ":"),
+  function(x) max(abs(as.numeric(x)))
+)
+
+enhancer_hepg2$gradxinp_0_max_orginal <- sapply(
+  strsplit(enhancer_hepg2$gradxinp_0, ":"),
+  function(x) max(as.numeric(x))
+)
+
+# calculate gradxinp_min
+enhancer_hepg2$gradxinp_0_min <- sapply(
+  strsplit(enhancer_hepg2$gradxinp_0, ":"),
+  function(x) min(abs(as.numeric(x)))
+)
+
+enhancer_hepg2$gradxinp_0_min_orginal <- sapply(
+  strsplit(enhancer_hepg2$gradxinp_0, ":"),
+  function(x) min(as.numeric(x))
+)
+
+# calculate difference
+enhancer_hepg2$gradxinp_difference <- enhancer_hepg2$gradxinp_0_max - enhancer_hepg2$gradxinp_0_min
+
+# use abs(max) in the ism for motif
+enhancer_hepg2$ism_0_max <- sapply(
+  strsplit(enhancer_hepg2$ism_0, ":"),
+  function(x) max(as.numeric(x))
+)
+```
+
+## add prediction
+```{r}
+merged_enhancer <- merge(enhancer_hepg2, prediction_enhancer, 
+                     by.x = "region", 
+                     by.y = "X", 
+                     all = FALSE)  
+
+merged_enhancer
+```
+
+## threshold
+```{r}
+colnames(merged_enhancer)[colnames(merged_enhancer) == "X0"] <- "prediction"
+# build subsets
+high_prediction_data_enhancer <- subset(merged_enhancer, merged_enhancer$prediction > 0.7)
+low_prediction_data_enhancer <- subset(merged_enhancer, merged_enhancer$prediction < 0.1)
+
+high_prediction_data_enhancer
+low_prediction_data_enhancer
+```
+## find example for high ISA and low prediction
+```{r}
+filtered_low_data <- low_prediction_data_enhancer %>%
+  arrange(desc(isa_track0),prediction) %>%  
+  select(
+    isa_track0,
+    ism_0_max,
+    gradxinp_0_max,
+    prediction,
+    chromosome,
+    protein,
+    region
+  )
+
+print(filtered_low_data)
+```
+
+## violin for gradxinp difference
+```{r}
+result <- creat_gradxinp_diff(high_prediction_data_enhancer, low_prediction_data_enhancer)
+result$plot
+
+ggsave(
+  filename = "enhancer_violin_difference.png",
+  plot = result$plot,
+  width = 8,
+  height = 6,
+  dpi = 300,
+  bg = "white"  
+)
+```
+
+
+## violin plot 
+```{r}
+# Generate the plot
+result <- create_violin_plot(high_prediction_data_enhancer, low_prediction_data_enhancer)
+plot <- result$plot
+plot
+ggsave(
+  filename = "enhancer_violin_maxmin.png",
+  plot = plot,
+  width = 8,
+  height = 6,
+  dpi = 300,
+  bg = "white"  
+)
+
+```
+
+## scatter plot
+```{r}
+plot <- plot_max_vs_min_with_predictions(merged_enhancer)
+ggsave(
+    filename = "max_min_enhancer.png",
+    plot = plot,
+    width = 8,
+    height = 6,
+    dpi = 300,
+    bg = "white"
+  )
+
+ans <- plot_max_vs_min_separate(merged_enhancer, high_prediction_data_enhancer, low_prediction_data_enhancer)
+ans
+ggsave(
+    filename = "scatter_max_vs_min_all_enhancer.png",
+    plot = ans$all_plot,
+    width = 8,
+    height = 6,
+    dpi = 300,
+    bg = "white"
+  )
+  
+ggsave(
+    filename = "scatter_max_vs_min_high_enhancer.png",
+    plot = ans$high_plot,
+    width = 8,
+    height = 6,
+    dpi = 300,
+    bg = "white"
+  )
+  
+ggsave(
+    filename = "scatter_max_vs_min_low_enhancer.png",
+    plot = ans$low_plot,
+    width = 8,
+    height = 6,
+    dpi = 300,
+    bg = "white"
+  )
+```
+
+```{r}
+ggplot(low_prediction_data_enhancer, aes(x = gradxinp_0_max, y = isa_track0)) +
+  geom_point() +
+  ggtitle("Correlation between gradxinp_0_max and isa_track0") +
+  xlab("gradxinp_0_max") +
+  ylab("isa_track0") +
+  theme_minimal()
+```
+
+## the relationshi bewtwwen correlation and prediction
+```{r}
+# for high prediction group
+cor_gradmax_isa <- cor(high_prediction_data_enhancer$gradxinp_0_max, high_prediction_data_enhancer$isa_track0)
+cor_ismmax_isa <- cor(high_prediction_data_enhancer$ism_0_max, high_prediction_data_enhancer$isa_track0)
+cor_gradmax_isa
+cor_ismmax_isa
+
+# for low prediction group
+cor_gradmax_isa2 <- cor(low_prediction_data_enhancer$gradxinp_0_max, low_prediction_data_enhancer$isa_track0)
+cor_ismmax_isa2 <- cor(low_prediction_data_enhancer$ism_0_max, low_prediction_data_enhancer$isa_track0)
+cor_gradmax_isa2
+cor_ismmax_isa2
+
+```
+## show the improvement of correlation between gradxinp_0_max and isa_track0 when increase the prediction score
+```{r}
+# Function to compute and plot correlation as a function of a threshold
+compute_and_plot_correlation <- function(data, prediction_column, x_column, y_column, threshold_range, step = 0.1) {
+  # Create a sequence of thresholds
+  thresholds <- seq(threshold_range[1], threshold_range[2], by = step)
+  
+  # Initialize an empty data frame to store results
+  correlation_results <- data.frame(threshold = numeric(0), correlation = numeric(0))
+  
+  # Loop through each threshold
+  for (threshold in thresholds) {
+    # Subset the data for the current threshold
+    subset_data <- subset(data, data[[prediction_column]] > threshold)
+    
+    # Calculate the correlation if sufficient data points exist
+    if (nrow(subset_data) > 1) {  
+      cor_value <- cor(subset_data[[x_column]], subset_data[[y_column]], use = "complete.obs")
+    } else {
+      cor_value <- NA  # If insufficient data points, assign NA
+    }
+    
+    # Store the results
+    correlation_results <- rbind(correlation_results, data.frame(threshold = threshold, correlation = cor_value))
+  }
+  
+  # Plot the correlation as a function of threshold
+  plot <- ggplot(correlation_results, aes(x = threshold, y = correlation)) +
+    geom_line() +
+    geom_point() +
+    labs(
+      title = paste("Correlation between", x_column, "and", y_column),
+      x = "Filtering Threshold of Prediction Score", 
+      y = "Correlation"
+    ) +
+    theme_minimal()
+  
+  # Return the plot and correlation results
+  return(list(correlation_results = correlation_results, plot = plot))
+}
+
+# call the function
+results <- compute_and_plot_correlation(
+  data = merged_enhancer, 
+  prediction_column = "prediction", 
+  x_column = "gradxinp_0_max", 
+  y_column = "isa_track0", 
+  threshold_range = c(0.1, 6),
+  step = 0.1
+)
+results
+# Generate the plot
+ggsave(
+  filename = "Correlation_enhancer_original_gradx_isa.png",
+  plot = results$plot,
+  width = 8,
+  height = 6,
+  dpi = 300,
+  bg = "white"  
+)
+```
+## see the change of correlation between ism_0_max and isa_track0 when increase the prediction score
+```{r}
+results <- compute_and_plot_correlation(
+  data = merged_enhancer, 
+  prediction_column = "prediction", 
+  x_column = "ism_0_max", 
+  y_column = "isa_track0", 
+  threshold_range = c(0.1, 6),
+  step = 0.1
+)
+results
+ggsave(
+  filename = "Correlation_enhancer_original_ism_isa.png",
+  plot = results$plot,
+  width = 8,
+  height = 6,
+  dpi = 300,
+  bg = "white"  
+)
+```
+## gradxinp and ism
+```{r}
+results <- compute_and_plot_correlation(
+  data = merged_enhancer, 
+  prediction_column = "prediction", 
+  x_column = "gradxinp_0_max", 
+  y_column = "ism_0_max", 
+  threshold_range = c(0.1, 6),
+  step = 0.1
+)
+results
+ggsave(
+  filename = "Correlation_enhancer_original_gradx_ism.png",
+  plot = results$plot,
+  width = 8,
+  height = 6,
+  dpi = 300,
+  bg = "white"  
+)
+```
+## make a plot - per sequence average motif isa v.s. per sequence prediction
+```{r}
+# Calculate the sum of prediction and the count of seq_idx
+merged_enhancer$prediction_sum <- ave(merged_enhancer$prediction, merged_enhancer$seq_idx, FUN = sum)
+merged_enhancer$prediction_count <- ave(merged_enhancer$prediction, merged_enhancer$seq_idx, FUN = length)
+
+# Calculate the per-sequence prediction by dividing the sum by the count for each seq_idx
+merged_enhancer$per_seq_prediction <- merged_enhancer$prediction_sum / merged_enhancer$prediction_count
+
+# Calculate the sum of isa_track0 and the count of seq_idx
+merged_enhancer$isa_track0_sum <- ave(merged_enhancer$isa_track0, merged_enhancer$seq_idx, FUN = sum)
+merged_enhancer$isa_track0_count <- ave(merged_enhancer$isa_track0, merged_enhancer$seq_idx, FUN = length)
+
+# Calculate the per-sequence ISA by dividing the sum by the count for each seq_idx
+merged_enhancer$per_seq_isa <- merged_enhancer$isa_track0_sum / merged_enhancer$isa_track0_count
+
+# View the updated dataset
+head(merged_enhancer)
+
+# Plot per-sequence average motif ISA vs per-sequence prediction
+plot <- ggplot(merged_enhancer, aes(x = per_seq_prediction, y = per_seq_isa)) +
+  geom_point(alpha = 0.7, color = "blue") +  # Scatter plot with blue points
+  labs(
+    title = "Per-Sequence Average ISA vs Per-Sequence Prediction",
+    x = "Per-Sequence Prediction",
+    y = "Per-Sequence Motif ISA"
+  ) +
+  theme_minimal() +
+  theme(
+    plot.title = element_text(hjust = 0.5, size = 14),
+    axis.title = element_text(size = 12),
+    axis.text = element_text(size = 10)
+  )
+
+ggsave(
+  filename = "per_sequence_isa_vs_prediction.png",
+  plot = plot,
+  width = 8,
+  height = 6,
+  dpi = 300,
+  bg = "white"  
+)
+```
+## distribution
+```{r}
+# Filter the data for protein ELK1
+elk1_data <- subset(merged_enhancer, protein == "ELK1")
+
+# Plot the distribution of ISA vs prediction for ELK1
+plot <- ggplot(elk1_data, aes(x = isa_track0, y = prediction)) +
+  geom_point(alpha = 0.7, color = "blue") +  # Scatter plot with blue points
+  labs(
+    title = "Distribution of ISA vs Prediction for Protein ELK1",
+    x = "ISA (isa_track0)",
+    y = "Prediction"
+  ) +
+  theme_minimal() +
+  theme(
+    plot.title = element_text(hjust = 0.5, size = 14),
+    axis.title = element_text(size = 12),
+    axis.text = element_text(size = 10)
+  )
+
+ggsave(
+  filename = "ELK1.png",
+  plot = plot,
+  width = 8,
+  height = 6,
+  dpi = 300,
+  bg = "white"  
+)
+# Filter the data for protein ZNF384
+ZNF384_data <- subset(merged_enhancer, protein == "ZNF384")
+
+# Plot the distribution of ISA vs prediction for ZNF384
+plot <- ggplot(ZNF384_data, aes(x = isa_track0, y = prediction)) +
+  geom_point(alpha = 0.7, color = "blue") +  # Scatter plot with blue points
+  labs(
+    title = "Distribution of ISA vs Prediction for Protein ZNF384",
+    x = "ISA (isa_track0)",
+    y = "Prediction"
+  ) +
+  theme_minimal() +
+  theme(
+    plot.title = element_text(hjust = 0.5, size = 14),
+    axis.title = element_text(size = 12),
+    axis.text = element_text(size = 10)
+  )
+ggsave(
+  filename = "ZNF384.png",
+  plot = plot,
+  width = 8,
+  height = 6,
+  dpi = 300,
+  bg = "white"  
+)
+
+```
+## normalize using prediction value
+```{r}
+# calculate ISA / prediction_value and gradxinp / prediction_value
+merged_enhancer <- merged_enhancer %>%
+  mutate(
+    isa_normalized = isa_track0 / prediction,
+    gradxinp_normalized = gradxinp_0_max / prediction,
+    ism_normalized = ism_0_max / prediction
+  )
+
+# Calculate correlation for normalized values
+cor_normalize<- cor(merged_enhancer$isa_normalized, merged_enhancer$gradxinp_normalized)
+cor_normalize
+cor_normalize2<- cor(merged_enhancer$isa_normalized, merged_enhancer$ism_normalized)
+cor_normalize2
+cor_normalize3<- cor(merged_enhancer$gradxinp_normalized, merged_enhancer$ism_normalized)
+cor_normalize3
+
+```
+## threshod
+```{r}
+thresholds <- seq(0.1, 6, by = 0.1)
+
+# Initialize an empty data frame to store results
+correlation_results <- data.frame(threshold = numeric(0), correlation = numeric(0))
+
+# Loop through each threshold, compute the correlation, and store the results
+for (threshold in thresholds) {
+  # Subset the data for the current threshold
+  subset_data <- subset(merged_enhancer, prediction > threshold)
+  
+  # Calculate the correlation
+  if (nrow(subset_data) > 1) {  # Ensure there are enough data points for correlation
+    cor_value <- cor(subset_data$gradxinp_normalized, subset_data$isa_normalized, use = "complete.obs")
+  } else {
+    cor_value <- NA  # If no data points, return NA
+  }
+  
+  # Store the results
+  correlation_results <- rbind(correlation_results, data.frame(threshold = threshold, correlation = cor_value))
+}
+
+# Plot the correlation as a function of threshold
+plot <- ggplot(correlation_results, aes(x = threshold, y = correlation)) +
+  geom_line() +
+  geom_point() +
+  labs(title = "Correlation between gradxinp_0_max and isa_track0 after normalization",
+       x = "Filtering Threshold of Prediction Score", 
+       y = "Correlation") +
+  theme_minimal()
+plot
+ggsave(
+  filename = "enhancer_nor_pre_grad_isa.png",
+  plot = plot,
+  width = 8,
+  height = 6,
+  dpi = 300,
+  bg = "white"  
+)
+```
+## for ism
+```{r}
+thresholds <- seq(0.1, 6, by = 0.1)
+
+# Initialize an empty data frame to store results
+correlation_results <- data.frame(threshold = numeric(0), correlation = numeric(0))
+
+# Loop through each threshold, compute the correlation, and store the results
+for (threshold in thresholds) {
+  # Subset the data for the current threshold
+  subset_data <- subset(merged_enhancer, prediction > threshold)
+  
+  # Calculate the correlation
+  if (nrow(subset_data) > 1) {  # Ensure there are enough data points for correlation
+    cor_value <- cor(subset_data$ism_normalized, subset_data$isa_normalized, use = "complete.obs")
+  } else {
+    cor_value <- NA  # If no data points, return NA
+  }
+  
+  # Store the results
+  correlation_results <- rbind(correlation_results, data.frame(threshold = threshold, correlation = cor_value))
+}
+
+# Plot the correlation as a function of threshold
+plot <- ggplot(correlation_results, aes(x = threshold, y = correlation)) +
+  geom_line() +
+  geom_point() +
+  labs(title = "Correlation between ism_0_max and isa_track0",
+       x = "Filtering Threshold of Prediction Score", 
+       y = "Correlation") +
+  theme_minimal()
+plot
+ggsave(
+  filename = "enhancer_nor_pre_ism_isa.png",
+  plot = plot,
+  width = 8,
+  height = 6,
+  dpi = 300,
+  bg = "white"  
+)
+```
+## ism and gradxinp
+```{r}
+thresholds <- seq(0.1, 6, by = 0.1)
+
+# Initialize an empty data frame to store results
+correlation_results <- data.frame(threshold = numeric(0), correlation = numeric(0))
+
+# Loop through each threshold, compute the correlation, and store the results
+for (threshold in thresholds) {
+  # Subset the data for the current threshold
+  subset_data <- subset(merged_enhancer, prediction > threshold)
+  
+  # Calculate the correlation
+  if (nrow(subset_data) > 1) {  # Ensure there are enough data points for correlation
+    cor_value <- cor(subset_data$gradxinp_normalized, subset_data$ism_normalized, use = "complete.obs")
+  } else {
+    cor_value <- NA  # If no data points, return NA
+  }
+  
+  # Store the results
+  correlation_results <- rbind(correlation_results, data.frame(threshold = threshold, correlation = cor_value))
+}
+
+# Plot the correlation as a function of threshold
+plot <- ggplot(correlation_results, aes(x = threshold, y = correlation)) +
+  geom_line() +
+  geom_point() +
+  labs(title = "Correlation between gradxinp_0_max and ism_track0 after normalization",
+       x = "Filtering Threshold of Prediction Score", 
+       y = "Correlation") +
+  theme_minimal()
+plot
+ggsave(
+  filename = "enhancer_nor_pre_grad_ism.png",
+  plot = plot,
+  width = 8,
+  height = 6,
+  dpi = 300,
+  bg = "white"  
+)
+```
+
+## apply normalization method2
+```{r}
+# normalize isa
+seq_sum <- aggregate(isa_track0 ~ seq_idx, data = merged_enhancer, sum)
+merged_enhancer <- merge(merged_enhancer, seq_sum, by = "seq_idx", suffixes = c("", "_total"))
+merged_enhancer$isa_track0_normalized <- merged_enhancer$isa_track0 / merged_enhancer$isa_track0_total
+
+# normalize gradxinp
+seq_sum <- aggregate(gradxinp_0_max ~ seq_idx, data = merged_enhancer, sum)
+merged_enhancer <- merge(merged_enhancer, seq_sum, by = "seq_idx", suffixes = c("", "_total"))
+merged_enhancer$gradxinp_0_max_normalized <- merged_enhancer$gradxinp_0_max / merged_enhancer$gradxinp_0_max_total
+
+# normalize ism
+seq_sum <- aggregate(ism_0_max ~ seq_idx, data = merged_enhancer, sum)
+merged_enhancer <- merge(merged_enhancer, seq_sum, by = "seq_idx", suffixes = c("", "_total"))
+merged_enhancer$ism_0_max_normalized <- merged_enhancer$ism_0_max / merged_enhancer$ism_0_max_total
+
+# Calculate correlation for normalized values
+cor_normalize_gradmax_isa <- cor(merged_enhancer$gradxinp_0_max_normalized, merged_enhancer$isa_track0_normalized)
+cor_normalize_gradmax_isa
+
+```
+## plot the correlation after normalization
+```{r}
+thresholds <- seq(0.1, 6, by = 0.1)
+
+# Initialize an empty data frame to store results
+correlation_results <- data.frame(threshold = numeric(0), correlation = numeric(0))
+
+# Loop through each threshold, compute the correlation, and store the results
+for (threshold in thresholds) {
+  # Subset the data for the current threshold
+  subset_data <- subset(merged_enhancer, prediction > threshold)
+  
+  # Calculate the correlation
+  if (nrow(subset_data) > 1) {  # Ensure there are enough data points for correlation
+    cor_value <- cor(subset_data$gradxinp_0_max_normalized, subset_data$isa_track0_normalized, use = "complete.obs")
+  } else {
+    cor_value <- NA  # If no data points, return NA
+  }
+  
+  # Store the results
+  correlation_results <- rbind(correlation_results, data.frame(threshold = threshold, correlation = cor_value))
+}
+
+# Plot the correlation as a function of threshold
+plot <- ggplot(correlation_results, aes(x = threshold, y = correlation)) +
+  geom_line() +
+  geom_point() +
+  labs(title = "Correlation between gradxinp_0_max_normalized and isa_track0_normalized",
+       x = "Filtering Threshold of Prediction Score", 
+       y = "Correlation") +
+  theme_minimal()
+plot
+ggsave(
+  filename = "enhancer_nor2_grad_isa.png",
+  plot = plot,
+  width = 8,
+  height = 6,
+  dpi = 300,
+  bg = "white"  
+)
+```
+## for ism
+```{r}
+thresholds <- seq(0.1, 6, by = 0.1)
+
+# Initialize an empty data frame to store results
+correlation_results <- data.frame(threshold = numeric(0), correlation = numeric(0))
+
+# Loop through each threshold, compute the correlation, and store the results
+for (threshold in thresholds) {
+  # Subset the data for the current threshold
+  subset_data <- subset(merged_enhancer, prediction > threshold)
+  
+  # Calculate the correlation
+  if (nrow(subset_data) > 1) {  # Ensure there are enough data points for correlation
+    cor_value <- cor(subset_data$ism_0_max_normalized, subset_data$isa_track0_normalized, use = "complete.obs")
+  } else {
+    cor_value <- NA  # If no data points, return NA
+  }
+  
+  # Store the results
+  correlation_results <- rbind(correlation_results, data.frame(threshold = threshold, correlation = cor_value))
+}
+
+# Plot the correlation as a function of threshold
+plot <- ggplot(correlation_results, aes(x = threshold, y = correlation)) +
+  geom_line() +
+  geom_point() +
+  labs(title = "Correlation between ism_0_max_normalized and isa_track0_normalized",
+       x = "Filtering Threshold of Prediction Score", 
+       y = "Correlation") +
+  theme_minimal()
+plot
+ggsave(
+  filename = "enhancer_nor2_ism_isa.png",
+  plot = plot,
+  width = 8,
+  height = 6,
+  dpi = 300,
+  bg = "white"  
+)
+```
+## ism and gradxinp
+```{r}
+thresholds <- seq(0.1, 6, by = 0.1)
+
+# Initialize an empty data frame to store results
+correlation_results <- data.frame(threshold = numeric(0), correlation = numeric(0))
+
+# Loop through each threshold, compute the correlation, and store the results
+for (threshold in thresholds) {
+  # Subset the data for the current threshold
+  subset_data <- subset(merged_enhancer, prediction > threshold)
+  
+  # Calculate the correlation
+  if (nrow(subset_data) > 1) {  # Ensure there are enough data points for correlation
+    cor_value <- cor(subset_data$gradxinp_0_max_normalized, subset_data$ism_0_max_normalized, use = "complete.obs")
+  } else {
+    cor_value <- NA  # If no data points, return NA
+  }
+  
+  # Store the results
+  correlation_results <- rbind(correlation_results, data.frame(threshold = threshold, correlation = cor_value))
+}
+plot <- ggplot(correlation_results, aes(x = threshold, y = correlation)) +
+  geom_line() +
+  geom_point() +
+  labs(title = "Correlation between gradxinp_0_max_normalized and ism_0_max_normalized",
+       x = "Filtering Threshold of Prediction Score", 
+       y = "Correlation") +
+  theme_minimal()
+plot
+ggsave(
+  filename = "enhancer_nor2_grad_ism.png",
+  plot = plot,
+  width = 8,
+  height = 6,
+  dpi = 300,
+  bg = "white"  
+)
+```
+
+## filter isa for redundancy
+```{r}
+filtered_data_enhancer <- subset(high_prediction_data_enhancer, isa_track0 > 0)
+filtered_data_enhancer
+```
+
+## gradxinp and isa
+```{r}
+process_and_visualize_data <- function(data, col1, col2, group_by_cols = c("protein", "chromosome", "region")) {
+
+  # Step 1: Calculate the absolute difference between specified columns
+  difference_col <- paste0(col1, "_", col2, "_difference")
+  data[[difference_col]] <- abs(data[[col1]] - data[[col2]])
+  
+  # Step 2: Calculate count for each group
+  count_col <- "count"
+  data[[count_col]] <- with(data, ave(data[[difference_col]], data[[group_by_cols[1]]], 
+                                      data[[group_by_cols[2]]], 
+                                      data[[group_by_cols[3]]], FUN = length))
+  
+  # Step 3: Filter rows with count >= 2
+  filtered_data <- subset(data, data[[count_col]] >= 2)
+  
+  # Step 4: Sort data
+  sorted_data <- filtered_data[order(-filtered_data[[count_col]], 
+                                     filtered_data[[group_by_cols[1]]], 
+                                     filtered_data[[group_by_cols[2]]], 
+                                     -filtered_data[[difference_col]]), ]
+  sorted_result <- sorted_data[, c(difference_col, group_by_cols, count_col, "isa_track0")]  # Add isa_track0
+  
+  # Step 5: Calculate average difference for each group
+  data[group_by_cols] <- lapply(data[group_by_cols], as.factor)
+  
+  average_difference_per_group <- aggregate(data[[difference_col]] ~ ., 
+                                            data = data[, c(difference_col, group_by_cols)], 
+                                            FUN = mean)
+  
+  # Step 6: Merge count and isa_track0 into the average difference result
+  result <- merge(average_difference_per_group, 
+                  data[, c(group_by_cols, count_col, "isa_track0")],  # Include "isa_track0"
+                  by = group_by_cols, 
+                  all.x = TRUE)
+  
+  # Step 7: Rename column and remove duplicates
+  colnames(result)[which(colnames(result) == difference_col)] <- "average_difference"
+  result <- result[!duplicated(result[, group_by_cols]), ]
+  
+  # Step 8: Order by count
+  result <- result[order(-result[[count_col]]), ]
+  
+  # Step 9: Calculate mean and median of average_difference per count
+  count_summary <- result %>%
+    group_by(!!sym(count_col)) %>%
+    summarise(
+      avg_of_avg_diff = mean(average_difference, na.rm = TRUE),
+      median_of_avg_diff = median(average_difference, na.rm = TRUE)
+    ) %>%
+    arrange(desc(!!sym(count_col)))
+  
+  # Step 10: Group by count = 1 and count != 1
+  count_group_summary <- result %>%
+    mutate(count_group = ifelse(!!sym(count_col) == 1, "count = 1", "count != 1")) %>%
+    group_by(count_group) %>%
+    summarise(
+      avg_of_avg_diff = mean(average_difference, na.rm = TRUE),
+      median_of_avg_diff = median(average_difference, na.rm = TRUE)
+    )
+  
+  # Step 11: Visualization
+  plot <- ggplot(result, aes(x = !!sym(count_col), y = average_difference)) +
+    geom_point(aes(color = average_difference), size = 2) +
+    labs(
+      title = paste("Average Difference of", col1, "and", col2, "vs. Count per Region"),
+      x = "Redundancy Count",
+      y = "Average Difference (*10^-2)"
+    ) +
+    theme_minimal() +
+    scale_x_continuous(breaks = seq(0, max(result[[count_col]]), by = 1))  # Set x-axis breaks as integers
+  
+  # Return processed data, aggregated data, count summary, count group summary, and plot
+  return(list(
+    filtered_data = sorted_result, 
+    aggregated_data = result, 
+    count_summary = count_summary,  # Original count summary by count
+    count_group_summary = count_group_summary,  # Added count group summary
+    plot = plot
+  ))
+}
+
+
+# Apply the function
+results <- process_and_visualize_data(
+  data = filtered_data_enhancer,
+  col1 = "gradxinp_0_max",
+  col2 = "isa_track0"
+)
+
+# View the aggregated data with average differences
+print(results$count_summary)
+print(results$count_group_summary)
+print(results$aggregated_data)
+# Plot the result
+print(results$plot)
+ggsave(
+  filename = "enhancer_redundancy_grad_isa.png",
+  plot = results$plot,
+  width = 8,
+  height = 6,
+  dpi = 300,
+  bg = "white"  
+)
+```
+
+## significance of difference
+```{r}
+perform_stat_tests <- function(motif_redundancy) {
+  # Filter for motifs with redundancy
+  filtered_df <- motif_redundancy %>%
+    group_by(protein) %>%            
+    filter(any(count > 1) & any(count == 1)) %>%       
+    ungroup()                        
+
+  # Perform t-test and U-test calculations
+  result <- filtered_df %>%
+    group_by(protein) %>%
+    summarise(
+      mean_diff = if (any(count == 1) & any(count > 1)) {
+        mean(average_difference[count > 1], na.rm = TRUE) - mean(average_difference[count == 1], na.rm = TRUE)
+      } else {
+        NA
+      },
+      median_diff = if (any(count == 1) & any(count > 1)) {
+        median(average_difference[count > 1], na.rm = TRUE) - median(average_difference[count == 1], na.rm = TRUE)
+      } else {
+        NA
+      },
+      t_test_p = if (sum(count == 1, na.rm = TRUE) > 1 & sum(count > 1, na.rm = TRUE) > 1) {
+        t.test(average_difference[count == 1], average_difference[count > 1], var.equal = FALSE)$p.value
+      } else {
+        NA
+      }
+    ) %>%
+    ungroup()
+
+  # Filter out rows with NA p-values
+  filtered_p_values <- result %>%
+    filter(!is.na(t_test_p))
+
+  # Subset for t-test significant data
+  t_test_significant_data <- filtered_p_values %>%
+    filter(t_test_p < 0.05)
+
+  # Calculate t-test significant proportions
+  t_test_significant <- mean(result$t_test_p < 0.05, na.rm = TRUE)
+
+  # Calculate the proportion of mean_diff > 0 under t_test_p < 0.05
+  mean_diff_positive_proportion <- mean(
+    t_test_significant_data$mean_diff > 0,
+    na.rm = TRUE
+  )
+
+  # Return a list containing the results
+  return(list(
+    filtered_df = filtered_df,
+    result = result,
+    filtered_p_values = filtered_p_values,
+    t_test_significant_data = t_test_significant_data,
+    t_test_significant = t_test_significant,
+    mean_diff_positive_proportion = mean_diff_positive_proportion
+  ))
+}
+
+# Run the function and print results
+ans <- perform_stat_tests(results$aggregated_data)
+print(ans$filtered_df)
+print(ans$filtered_p_values)
+print(ans$t_test_significant_data)
+print(ans$t_test_significant)
+print(ans$mean_diff_positive_proportion)
+```
+
+## ISA threshold
+```{r}
+calculate_significance_and_plot <- function(filtered_df, result, isa_col = "isa_track0", t_test_p_col = "t_test_p") {
+  
+  # Step 1: Merge the filtered data and results to include p-values
+  filtered_p_values <- filtered_df %>%
+    inner_join(result, by = "protein") %>%
+    filter(!is.na(t_test_p))
+  
+  # Step 2: Sort the unique values of the isa_col (isa_track0 in your case)
+  thresholds <- sort(unique(filtered_p_values[[isa_col]]))  
+  
+  # Initialize a data frame to store significance results by threshold
+  significance_results <- data.frame(threshold = numeric(0), 
+                                     t_test_significant = numeric(0))  
+  
+  # Step 3: Loop through each threshold and calculate the significance ratios
+  for (threshold in thresholds) {
+    # Filter data based on the current threshold
+    filtered_data <- filtered_p_values %>%
+      filter(filtered_p_values[[isa_col]] >= threshold)
+    
+    # Calculate the proportion of significant t-tests
+    t_test_significant <- mean(filtered_data[[t_test_p_col]] < 0.05, na.rm = TRUE)
+    
+    # Store the results
+    significance_results <- significance_results %>%
+      add_row(threshold = threshold, 
+              t_test_significant = t_test_significant)
+  }
+  
+  # Step 4: Create the plot for t-test significant proportion by threshold
+  t_test_plot <- ggplot(significance_results, aes(x = threshold, y = t_test_significant)) +
+    geom_line(color = "blue", size = 1) +
+    labs(title = "T-test Significant Proportion by Threshold of isa_track0",
+         x = "Threshold of isa_track0",
+         y = "Proportion of Significant Tests") +
+    theme_minimal()
+  
+  # Return the significance results and the plot
+  return(list(
+    significance_results = significance_results,
+    t_test_plot = t_test_plot
+  ))
+}
+
+# Run the function
+results <- calculate_significance_and_plot(ans$filtered_df, ans$result)
+
+# Access the significance results data frame
+print(results$significance_results)
+
+# Display the t-test plot
+print(results$t_test_plot)
+ggsave(
+  filename = "enhancer_t_test_grad_isa.png",
+  plot = results$t_test_plot,
+  width = 8,
+  height = 6,
+  dpi = 300,
+  bg = "white"
+)
+```
+
+## average difference between ism and isa per region
+```{r}
+# Apply the function
+results <- process_and_visualize_data(
+  data = filtered_data_enhancer,
+  col1 = "ism_0_max",
+  col2 = "isa_track0"
+)
+print(results$count_summary)
+print(results$count_group_summary)
+filtered_data <- results$aggregated_data
+
+print(filtered_data)
+
+# desc order by average_difference 
+filtered_data <- filtered_data %>%
+  arrange(desc(average_difference))
+print(filtered_data)
+
+# Plot the result
+print(results$plot)
+ggsave(
+  filename = "enhancer_redundancy_ism_isa.png",
+  plot = results$plot,
+  width = 8,
+  height = 6,
+  dpi = 300,
+  bg = "white" 
+)
+```
+## siginificant
+```{r}
+ans <- perform_stat_tests(results$aggregated_data)
+# Access individual components of the results
+print(ans$filtered_p_values)
+print(ans$t_test_significant_data)
+print(ans$t_test_significant)
+print(ans$mean_diff_positive_proportion)
+
+# ratio
+results <- calculate_significance_and_plot(ans$filtered_df, ans$result)
+
+# Access the significance results data frame
+print(results$significance_results)
+
+# Display the plots
+print(results$t_test_plot)
+
+ggsave(
+  filename = "enhancer_t_test_ism_isa.png",
+  plot = results$t_test_plot,
+  width = 8,
+  height = 6,
+  dpi = 300,
+  bg = "white" 
+)
+
+```
+## ism and gradxinp
+```{r}
+# Apply the function
+results <- process_and_visualize_data(
+  data = filtered_data_enhancer,
+  col1 = "gradxinp_0_max",
+  col2 = "ism_0_max"
+)
+
+# View the aggregated data with average differences
+print(results$aggregated_data)
+print(results$count_summary)
+print(results$count_group_summary)
+# Plot the result
+print(results$plot)
+ggsave(
+  filename = "enhancer_redundancy_grad_ism.png",
+  plot = results$plot,
+  width = 8,
+  height = 6,
+  dpi = 300,
+  bg = "white"  
+)
+```
+## significant
+```{r}
+ans <- perform_stat_tests(results$aggregated_data)
+# Access individual components of the results
+print(ans$filtered_p_values)
+print(ans$t_test_significant_data)
+print(ans$t_test_significant)
+print(ans$mean_diff_positive_proportion)
+
+# ratio
+results <- calculate_significance_and_plot(ans$filtered_df, ans$result)
+
+# Access the significance results data frame
+print(results$significance_results)
+
+# Display the plots
+print(results$t_test_plot)
+
+ggsave(
+  filename = "enhancer_t_test_grad_ism.png",
+  plot = results$t_test_plot,
+  width = 8,
+  height = 6,
+  dpi = 300,
+  bg = "white" 
+)
+```
+
+## for specific protein
+```{r}
+process_data <- function(data, col1, col2, group_by_cols = c("protein", "chromosome", "region")) {
+  
+  # Step 1: Calculate the absolute difference between specified columns
+  difference_col <- paste0(col1, "_", col2, "_difference")
+  data[[difference_col]] <- abs(data[[col1]] - data[[col2]])
+  
+  # Step 2: Calculate count for each group
+  count_col <- "count"
+  data[[count_col]] <- with(data, ave(data[[difference_col]], data[[group_by_cols[1]]], 
+                                      data[[group_by_cols[2]]], 
+                                      data[[group_by_cols[3]]], FUN = length))
+  
+  # Step 3: Filter rows with count >= 2
+  filtered_data <- subset(data, data[[count_col]] >= 2)
+  
+  # Step 4: Sort data
+  sorted_data <- filtered_data[order(-filtered_data[[count_col]], 
+                                     filtered_data[[group_by_cols[1]]], 
+                                     filtered_data[[group_by_cols[2]]], 
+                                     -filtered_data[[difference_col]]), ]
+  sorted_result <- sorted_data[, c(difference_col, group_by_cols, count_col)]
+  
+  # Step 5: Calculate average difference for each group
+  data[group_by_cols] <- lapply(data[group_by_cols], as.factor)
+  
+  average_difference_per_group <- aggregate(data[[difference_col]] ~ ., 
+                                            data = data[, c(difference_col, group_by_cols)], 
+                                            FUN = mean)
+  
+  # Step 6: Merge count into the average difference result
+  result <- merge(average_difference_per_group, 
+                  data[, c(group_by_cols, count_col)], 
+                  by = group_by_cols, 
+                  all.x = TRUE)
+  
+  # Step 7: Rename column and remove duplicates
+  colnames(result)[which(colnames(result) == difference_col)] <- "average_difference"
+  result <- result[!duplicated(result[, group_by_cols]), ]
+  
+  # Step 8: Order by count
+  result <- result[order(-result[[count_col]]), ]
+  
+  # Step 9: Calculate mean and median of average_difference per count
+  count_summary <- result %>%
+    group_by(!!sym(count_col)) %>%
+    summarise(
+      avg_of_avg_diff = mean(average_difference, na.rm = TRUE),
+      median_of_avg_diff = median(average_difference, na.rm = TRUE)
+    ) %>%
+    arrange(desc(!!sym(count_col)))
+  
+  # Step 10: Visualization
+  plot <- ggplot(result, aes(x = factor(!!sym(count_col)), y = average_difference)) +
+    geom_point(aes(color = average_difference), size = 2) +
+    labs(
+      title = paste("Average Difference of", col1, "and", col2, "vs. Count per Region"),
+      x = "Redundancy Count",
+      y = "Average Difference"
+    ) +
+    theme_minimal() +
+    theme(axis.ticks.x = element_blank())  # Simplify x-axis ticks for categorical look
+  
+  # Return processed data and plot
+  return(list(
+    filtered_data = sorted_result, 
+    aggregated_data = result, 
+    count_summary = count_summary,  
+    plot = plot
+  ))
+}
+
+```
+
+## CTCF
+```{r}
+filtered_enhancer_CTCF <- subset(filtered_data_enhancer, protein == "CTCF")
+
+# ism and isa
+results <- process_data(
+  data = filtered_enhancer_CTCF,
+  col1 = "ism_0_max",
+  col2 = "isa_track0"
+)
+print(results$aggregated_data)
+print(results$count_summary)
+print(results$plot)
+ggsave(
+  filename = "enhancer_protein_ism_isa.png",
+  plot = results$plot,
+  width = 8,
+  height = 6,
+  dpi = 300,
+  bg = "white" 
+)
+
+# ism and gradxinp
+results <- process_data(
+  data = filtered_enhancer_CTCF,
+  col1 = "ism_0_max",
+  col2 = "gradxinp_0_max"
+)
+print(results$aggregated_data)
+print(results$count_summary)
+print(results$plot)
+ggsave(
+  filename = "enhancer_protein_grad_ism.png",
+  plot = results$plot,
+  width = 8,
+  height = 6,
+  dpi = 300,
+  bg = "white"  
+)
+
+# isa and gradxinp
+results <- process_data(
+  data = filtered_enhancer_CTCF,
+  col1 = "isa_track0",
+  col2 = "gradxinp_0_max"
+)
+print(results$aggregated_data)
+print(results$count_summary)
+print(results$plot)
+ggsave(
+  filename = "enhancer_protein_grad_isa.png",
+  plot = results$plot,
+  width = 8,
+  height = 6,
+  dpi = 300,
+  bg = "white"  
+)
+```
+
+## for significant negative - ELK1::SREBF2
+```{r}
+filtered_enhancer_ELK1 <- subset(filtered_data_enhancer, protein == "ELK1::SREBF2")
+# Load necessary libraries
+library(ggplot2)
+library(tidyr)
+
+# Filter the data for ELK1::SREBF2 (assuming this step is done earlier)
+# filtered_enhancer_ELK1 <- subset(filtered_data_enhancer, protein == "ELK1::SREBF2")
+
+# Select only the three columns of interest
+data_to_plot <- filtered_enhancer_ELK1[, c("ism_0_max", "isa_track0", "gradxinp_0_max")]
+
+# Reshape the data into long format using tidyr::pivot_longer
+data_long <- data_to_plot %>%
+  pivot_longer(
+    cols = everything(),
+    names_to = "Metric",
+    values_to = "Value"
+  )
+
+# Create the violin plot
+violin_plot <- ggplot(data_long, aes(x = Metric, y = Value, fill = Metric)) +
+  geom_violin(alpha = 0.7, trim = FALSE) +
+  geom_boxplot(width = 0.1, outlier.shape = NA, alpha = 0.5) +  # Add boxplot overlay
+  labs(
+    title = "Violin Plot for three feature attribution scores for motif ELK1::SREBF2",
+    x = "Feature attribution Score",
+    y = "Value"
+  ) +
+  theme_minimal() +
+  theme(
+    legend.position = "none",
+    axis.text.x = element_text(angle = 45, hjust = 1)
+  )
+
+# Print the plot
+print(violin_plot)
+
+# Save the plot as a file
+ggsave(
+  filename = "elk1_violin_plot.png",
+  plot = violin_plot,
+  width = 8,
+  height = 6,
+  dpi = 300,
+  bg = "white"
+)
+
+```
+
+## signifiacnt positive -ATF3
+```{r}
+filtered_enhancer_ATF3 <- subset(filtered_data_enhancer, protein == "ATF3")
+# ism and isa
+results <- process_and_visualize_data(
+  data = filtered_enhancer_ATF3,
+  col1 = "ism_0_max",
+  col2 = "isa_track0"
+)
+print(results$count_summary)
+print(results$count_group_summary)
+print(results$plot)
+ggsave(
+  filename = "enhancer_ATF3_ism_isa.png",
+  plot = results$plot,
+  width = 8,
+  height = 6,
+  dpi = 300,
+  bg = "white" 
+)
+
+## gradxinp and isa
+results <- process_and_visualize_data(
+  data = filtered_enhancer_ATF3,
+  col1 = "gradxinp_0_max",
+  col2 = "isa_track0"
+)
+print(results$count_summary)
+print(results$count_group_summary)
+print(results$plot)
+ggsave(
+  filename = "enhancer_ATF3_gradxinp_isa.png",
+  plot = results$plot,
+  width = 8,
+  height = 6,
+  dpi = 300,
+  bg = "white" 
+)
+
+## ism and gradxinp
+results <- process_and_visualize_data(
+  data = filtered_enhancer_ATF3,
+  col1 = "gradxinp_0_max",
+  col2 = "ism_0_max"
+)
+print(results$count_summary)
+print(results$count_group_summary)
+print(results$plot)
+ggsave(
+  filename = "enhancer_ATF3_gradxinp_ism.png",
+  plot = results$plot,
+  width = 8,
+  height = 6,
+  dpi = 300,
+  bg = "white" 
+)
+```
+
+
+
+
+
+
+
+
+
+
+
+## promoter: 
+```{r}
+# use abs(max) in the gradxinp for motif
+promoter_hepg2$gradxinp_0_max <- sapply(
+  strsplit(promoter_hepg2$gradxinp_0, ":"),
+  function(x) max(abs(as.numeric(x)))
+)
+
+promoter_hepg2$gradxinp_0_max_orginal <- sapply(
+  strsplit(promoter_hepg2$gradxinp_0, ":"),
+  function(x) max(as.numeric(x))
+)
+
+# calculate gradxinp_min
+promoter_hepg2$gradxinp_0_min <- sapply(
+  strsplit(promoter_hepg2$gradxinp_0, ":"),
+  function(x) min(abs(as.numeric(x)))
+)
+
+promoter_hepg2$gradxinp_0_min_orginal <- sapply(
+  strsplit(promoter_hepg2$gradxinp_0, ":"),
+  function(x) min(as.numeric(x))
+)
+
+# calculate difference
+promoter_hepg2$gradxinp_difference <- promoter_hepg2$gradxinp_0_max - promoter_hepg2$gradxinp_0_min
+
+# use abs(max) in the ism for motif
+promoter_hepg2$ism_0_max <- sapply(
+  strsplit(promoter_hepg2$ism_0, ":"),
+  function(x) max(as.numeric(x))
+)
+```
+
+## add prediction
+```{r}
+merged_promoter <- merge(promoter_hepg2, prediction_promoter, 
+                     by.x = "region", 
+                     by.y = "X", 
+                     all = FALSE)  
+
+merged_promoter
+```
+
+## subsets
+```{r}
+colnames(merged_promoter)[colnames(merged_promoter) == "X0"] <- "prediction"
+# build subsets
+high_prediction_data_promoter <- subset(merged_promoter, merged_promoter$prediction > 3)
+low_prediction_data_promoter <- subset(merged_promoter, merged_promoter$prediction < 0.5)
+
+high_prediction_data_promoter
+low_prediction_data_promoter
+```
+## find example
+```{r}
+filtered_low_data <- low_prediction_data_promoter %>%
+  filter(
+    gradxinp_0_min_orginal < 0,
+    gradxinp_0_max_orginal < 0
+  ) %>%
+  arrange(desc(gradxinp_difference)) %>%  # 按 gradxinp_difference 降序排序
+  select(
+    gradxinp_difference,
+    gradxinp_0_min_orginal,
+    gradxinp_0_max_orginal,
+    prediction,
+    chromosome,
+    protein,
+    region
+  )
+
+print(filtered_low_data)
+```
+
+## example for high ISA and low prediction
+```{r}
+filtered_low_data <- low_prediction_data_promoter %>%
+  arrange(desc(isa_track0),prediction) %>%  
+  select(
+    isa_track0,
+    ism_0_max,
+    gradxinp_0_max,
+    prediction,
+    chromosome,
+    protein,
+    region
+  )
+
+print(filtered_low_data)
+```
+
+## violin for gradxinp difference
+```{r}
+result <- creat_gradxinp_diff(high_prediction_data_promoter, low_prediction_data_promoter)
+result$plot
+
+ggsave(
+  filename = "promoter_violin_difference.png",
+  plot = result$plot,
+  width = 8,
+  height = 6,
+  dpi = 300,
+  bg = "white"  
+)
+```
+## violin plot
+```{r}
+result <- create_violin_plot(high_prediction_data_promoter, low_prediction_data_promoter)
+plot <- result$plot
+plot
+ggsave(
+  filename = "promoter_violin_maxmin.png",
+  plot = plot,
+  width = 8,
+  height = 6,
+  dpi = 300,
+  bg = "white"  
+)
+```
+## scatter plot
+```{r}
+plot_max_vs_min_with_predictions <- function(data) {
+  
+  data$prediction_group <- ifelse(data$prediction > 3, "High Prediction",
+                                  ifelse(data$prediction < 0.5, "Low Prediction", "Other"))
+  
+  
+  plot <- ggplot(data, aes(x = gradxinp_0_max_orginal, y = gradxinp_0_min_orginal, color = prediction_group)) +
+    geom_point(alpha = 0.7, size = 1.5) +
+    scale_color_manual(
+      values = c("High Prediction" = "red", 
+                 "Low Prediction" = "blue", 
+                 "Other" = "grey")
+    ) +
+    labs(
+      title = "Scatter Plot of Max vs. Min gradxinp with Prediction Groups",
+      x = "Max gradxinp",
+      y = "Min gradxinp",
+      color = "Prediction Group"
+    ) +
+    theme_minimal()
+  
+  return(plot)
+}
+
+plot <- plot_max_vs_min_with_predictions(merged_promoter)
+  
+ggsave(
+    filename = "max_min_promoter.png",
+    plot = plot,
+    width = 8,
+    height = 6,
+    dpi = 300,
+    bg = "white"
+  )
+
+ans <- plot_max_vs_min_separate(merged_promoter, high_prediction_data_promoter, low_prediction_data_promoter)
+
+ggsave(
+    filename = "scatter_max_vs_min_all_promoter.png",
+    plot = ans$all_plot,
+    width = 8,
+    height = 6,
+    dpi = 300,
+    bg = "white"
+  )
+  
+ggsave(
+    filename = "scatter_max_vs_min_high_promoter.png",
+    plot = ans$high_plot,
+    width = 8,
+    height = 6,
+    dpi = 300,
+    bg = "white"
+  )
+  
+ggsave(
+    filename = "scatter_max_vs_min_low_promoter.png",
+    plot = ans$low_plot,
+    width = 8,
+    height = 6,
+    dpi = 300,
+    bg = "white"
+  )
+
+```
+
+## correlation
+```{r}
+# for high prediction group
+cor_gradmax_isa <- cor(high_prediction_data_promoter$gradxinp_0_max, high_prediction_data_promoter$isa_track0)
+cor_ismmax_isa <- cor(high_prediction_data_promoter$ism_0_max, high_prediction_data_promoter$isa_track0)
+cor_gradmax_isa
+cor_ismmax_isa
+
+# for low prediction group
+cor_gradmax_isa2 <- cor(low_prediction_data_promoter$gradxinp_0_max, low_prediction_data_promoter$isa_track0)
+cor_ismmax_isa2 <- cor(low_prediction_data_promoter$ism_0_max, low_prediction_data_promoter$isa_track0)
+cor_gradmax_isa2
+cor_ismmax_isa2
+```
+## three correlation plots
+```{r}
+# gradxinp and isa
+results <- compute_and_plot_correlation(
+  data = merged_promoter, 
+  prediction_column = "prediction", 
+  x_column = "gradxinp_0_max", 
+  y_column = "isa_track0", 
+  threshold_range = c(0.1, 6),
+  step = 0.1
+)
+results
+ggsave(
+  filename = "Correlation_promoter_original_gradx_isa.png",
+  plot = results$plot,
+  width = 8,
+  height = 6,
+  dpi = 300,
+  bg = "white" 
+)
+
+# ism and isa
+results <- compute_and_plot_correlation(
+  data = merged_promoter, 
+  prediction_column = "prediction", 
+  x_column = "ism_0_max", 
+  y_column = "isa_track0", 
+  threshold_range = c(0.1, 6),
+  step = 0.1
+)
+results
+ggsave(
+  filename = "Correlation_promoter_original_ism_isa.png",
+  plot = results$plot,
+  width = 8,
+  height = 6,
+  dpi = 300,
+  bg = "white"  
+)
+
+# gradxinp and ism
+results <- compute_and_plot_correlation(
+  data = merged_promoter, 
+  prediction_column = "prediction", 
+  x_column = "gradxinp_0_max", 
+  y_column = "ism_0_max", 
+  threshold_range = c(0.1, 6),
+  step = 0.1
+)
+results
+ggsave(
+  filename = "Correlation_promoter_original_gradx_ism.png",
+  plot = results$plot,
+  width = 8,
+  height = 6,
+  dpi = 300,
+  bg = "white"  
+)
+```
+
+## normalization1
+```{r}
+# calculate ISA / prediction_value and gradxinp / prediction_value
+merged_promoter <- merged_promoter %>%
+  mutate(
+    isa_normalized = isa_track0 / prediction,
+    gradxinp_normalized = gradxinp_0_max / prediction,
+    ism_normalized = ism_0_max / prediction
+  )
+```
+
+
+## plot normalization -gradxinp and isa
+```{r}
+# call the function
+results <- compute_and_plot_correlation(
+  data = merged_promoter, 
+  prediction_column = "prediction", 
+  x_column = "gradxinp_normalized", 
+  y_column = "isa_normalized", 
+  threshold_range = c(0.1, 6),
+  step = 0.1
+)
+results
+# Generate the plot
+ggsave(
+  filename = "promoter_nor1_gradx_isa.png",
+  plot = results$plot,
+  width = 8,
+  height = 6,
+  dpi = 300,
+  bg = "white" 
+)
+```
+## ism and isa
+```{r}
+results <- compute_and_plot_correlation(
+  data = merged_promoter, 
+  prediction_column = "prediction", 
+  x_column = "ism_normalized", 
+  y_column = "isa_normalized", 
+  threshold_range = c(0.1, 6),
+  step = 0.1
+)
+results
+ggsave(
+  filename = "promoter_nor1_ism_isa.png",
+  plot = results$plot,
+  width = 8,
+  height = 6,
+  dpi = 300,
+  bg = "white"  
+)
+```
+## ism and gradxinp
+```{r}
+results <- compute_and_plot_correlation(
+  data = merged_promoter, 
+  prediction_column = "prediction", 
+  x_column = "gradxinp_normalized", 
+  y_column = "ism_normalized", 
+  threshold_range = c(0.1, 6),
+  step = 0.1
+)
+results
+ggsave(
+  filename = "promoter_nor1_gradx_ism.png",
+  plot = results$plot,
+  width = 8,
+  height = 6,
+  dpi = 300,
+  bg = "white"  
+)
+
+```
+
+## normalization2
+```{r}
+# normalize isa
+seq_sum <- aggregate(isa_track0 ~ seq_idx, data = merged_promoter, sum)
+merged_promoter <- merge(merged_promoter, seq_sum, by = "seq_idx", suffixes = c("", "_total"))
+merged_promoter$isa_track0_normalized <- merged_promoter$isa_track0 / merged_promoter$isa_track0_total
+
+# normalize gradxinp
+seq_sum <- aggregate(gradxinp_0_max ~ seq_idx, data = merged_promoter, sum)
+merged_promoter <- merge(merged_promoter, seq_sum, by = "seq_idx", suffixes = c("", "_total"))
+merged_promoter$gradxinp_0_max_normalized <- merged_promoter$gradxinp_0_max / merged_promoter$gradxinp_0_max_total
+
+# normalize ism
+seq_sum <- aggregate(ism_0_max ~ seq_idx, data = merged_promoter, sum)
+merged_promoter <- merge(merged_promoter, seq_sum, by = "seq_idx", suffixes = c("", "_total"))
+merged_promoter$ism_0_max_normalized <- merged_promoter$ism_0_max / merged_promoter$ism_0_max_total
+
+# Calculate correlation for normalized values
+cor_normalize_gradmax_isa <- cor(merged_promoter$gradxinp_0_max_normalized, merged_promoter$isa_track0_normalized)
+cor_normalize_gradmax_isa
+```
+## plot normalization -gradxinp and isa
+```{r}
+# call the function
+results <- compute_and_plot_correlation(
+  data = merged_promoter, 
+  prediction_column = "prediction", 
+  x_column = "gradxinp_0_max_normalized", 
+  y_column = "isa_track0_normalized", 
+  threshold_range = c(0.1, 6),
+  step = 0.1
+)
+results
+# Generate the plot
+ggsave(
+  filename = "promoter_nor2_gradx_isa.png",
+  plot = results$plot,
+  width = 8,
+  height = 6,
+  dpi = 300,
+  bg = "white"  
+)
+```
+## ism and isa
+```{r}
+results <- compute_and_plot_correlation(
+  data = merged_promoter, 
+  prediction_column = "prediction", 
+  x_column = "ism_0_max_normalized", 
+  y_column = "isa_track0_normalized", 
+  threshold_range = c(0.1, 6),
+  step = 0.1
+)
+results
+ggsave(
+  filename = "promoter_nor2_ism_isa.png",
+  plot = results$plot,
+  width = 8,
+  height = 6,
+  dpi = 300,
+  bg = "white"  
+)
+```
+## ism and gradxinp
+```{r}
+results <- compute_and_plot_correlation(
+  data = merged_promoter, 
+  prediction_column = "prediction", 
+  x_column = "gradxinp_0_max_normalized", 
+  y_column = "ism_0_max_normalized", 
+  threshold_range = c(0.1, 6),
+  step = 0.1
+)
+results
+ggsave(
+  filename = "promoter_nor2_gradx_ism.png",
+  plot = results$plot,
+  width = 8,
+  height = 6,
+  dpi = 300,
+  bg = "white" 
+)
+
+```
+## redundancy
+```{r}
+# isa > 0
+filtered_data_promoter <- subset(high_prediction_data_promoter, isa_track0 > 0)
+```
+## gradxinp and isa
+```{r}
+# isa and gradxinp
+results <- process_and_visualize_data(
+  data = filtered_data_promoter,
+  col1 = "isa_track0",
+  col2 = "gradxinp_0_max"
+)
+print(results$count_summary)
+print(results$count_group_summary)
+print(results$plot)
+ggsave(
+  filename = "promoter_redun_grad_isa.png",
+  plot = results$plot,
+  width = 8,
+  height = 6,
+  dpi = 300,
+  bg = "white" 
+)
+
+ans <- perform_stat_tests(results$aggregated_data)
+# Access individual components of the results
+print(ans$filtered_p_values)
+print(ans$t_test_significant_data)
+print(ans$t_test_significant)
+print(ans$mean_diff_positive_proportion)
+
+# ratio
+results <- calculate_significance_and_plot(ans$filtered_df, ans$result)
+
+# Access the significance results data frame
+print(results$significance_results)
+
+# Display the plots
+print(results$t_test_plot)
+
+ggsave(
+  filename = "promoter_t_test_grad_isa.png",
+  plot = results$t_test_plot,
+  width = 8,
+  height = 6,
+  dpi = 300,
+  bg = "white" 
+)
+
+```
+
+## isa and ism
+```{r}
+# ism and isa
+results <- process_and_visualize_data(
+  data = filtered_data_promoter,
+  col1 = "ism_0_max",
+  col2 = "isa_track0"
+)
+
+print(results$count_summary)
+print(results$count_group_summary)
+print(results$plot)
+ggsave(
+  filename = "promoter_redun_ism_isa.png",
+  plot = results$plot,
+  width = 8,
+  height = 6,
+  dpi = 300,
+  bg = "white"  
+)
+
+ans <- perform_stat_tests(results$aggregated_data)
+# Access individual components of the results
+print(ans$filtered_p_values)
+print(ans$t_test_significant_data)
+print(ans$t_test_significant)
+print(ans$mean_diff_positive_proportion)
+
+# ratio
+results <- calculate_significance_and_plot(ans$filtered_df, ans$result)
+
+# Access the significance results data frame
+print(results$significance_results)
+
+# Display the plots
+print(results$t_test_plot)
+
+ggsave(
+  filename = "promoter_t_test_ism_isa.png",
+  plot = results$t_test_plot,
+  width = 8,
+  height = 6,
+  dpi = 300,
+  bg = "white" 
+)
+
+```
+
+## gradxinp and ism
+```{r}
+# ism and gradxinp
+results <- process_and_visualize_data(
+  data = filtered_data_promoter,
+  col1 = "ism_0_max",
+  col2 = "gradxinp_0_max"
+)
+print(results$count_summary)
+print(results$count_group_summary)
+print(results$plot)
+ggsave(
+  filename = "promoter_redun_grad_ism.png",
+  plot = results$plot,
+  width = 8,
+  height = 6,
+  dpi = 300,
+  bg = "white"  
+)
+
+ans <- perform_stat_tests(results$aggregated_data)
+# Access individual components of the results
+print(ans$filtered_p_values)
+print(ans$t_test_significant_data)
+print(ans$t_test_significant)
+print(ans$mean_diff_positive_proportion)
+
+# ratio
+results <- calculate_significance_and_plot(ans$filtered_df, ans$result)
+
+# Access the significance results data frame
+print(results$significance_results)
+
+# Display the plots
+print(results$t_test_plot)
+
+ggsave(
+  filename = "promoter_t_test_grad_ism.png",
+  plot = results$t_test_plot,
+  width = 8,
+  height = 6,
+  dpi = 300,
+  bg = "white" 
+)
+
+```
+
+
+## CTCF
+```{r}
+filtered_promoter_CTCF <- subset(filtered_data_promoter, protein == "CTCF")
+
+# ism and isa
+results <- process_data(
+  data = filtered_promoter_CTCF,
+  col1 = "ism_0_max",
+  col2 = "isa_track0"
+)
+print(results$aggregated_data)
+print(results$count_summary)
+print(results$plot)
+ggsave(
+  filename = "promoter_protein_ism_isa.png",
+  plot = results$plot,
+  width = 8,
+  height = 6,
+  dpi = 300,
+  bg = "white" 
+)
+
+# ism and gradxinp
+results <- process_data(
+  data = filtered_promoter_CTCF,
+  col1 = "ism_0_max",
+  col2 = "gradxinp_0_max"
+)
+print(results$aggregated_data)
+print(results$count_summary)
+print(results$plot)
+ggsave(
+  filename = "promoter_protein_grad_ism.png",
+  plot = results$plot,
+  width = 8,
+  height = 6,
+  dpi = 300,
+  bg = "white"  
+)
+
+# isa and gradxinp
+results <- process_data(
+  data = filtered_promoter_CTCF,
+  col1 = "isa_track0",
+  col2 = "gradxinp_0_max"
+)
+print(results$aggregated_data)
+print(results$count_summary)
+print(results$plot)
+ggsave(
+  filename = "promoter_protein_grad_isa.png",
+  plot = results$plot,
+  width = 8,
+  height = 6,
+  dpi = 300,
+  bg = "white"  
+)
+```
+
+
